@@ -14,8 +14,11 @@ services:
     command: >
       --model-id BAAI/bge-m3
       --pooling cls
-      --max-client-batch-size 32
-      --dtype float32
+      --max-concurrent-requests ${EMBEDDING_MAX_CONCURRENT_REQUESTS:-64}
+      --max-batch-tokens ${EMBEDDING_MAX_BATCH_TOKENS:-4096}
+      --max-client-batch-size ${EMBEDDING_MAX_CLIENT_BATCH_SIZE:-8}
+      --max-batch-requests ${EMBEDDING_MAX_BATCH_REQUESTS:-16}
+      --tokenization-workers ${EMBEDDING_TOKENIZATION_WORKERS:-2}
       --huggingface-hub-cache /data
     shm_size: 2g
   qdrant:

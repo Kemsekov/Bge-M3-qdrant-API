@@ -30,7 +30,7 @@ A lightweight Retrieval-Augmented Generation (RAG) system built with FastAPI, Qd
 ### Prerequisites
 
 - Docker & Docker Compose
-- At least 4GB RAM for the embedding model
+- **At least 4GB RAM** for the embedding model (BGE-M3 uses ~3.7GB with low-memory config)
 
 ### Setup
 
@@ -148,6 +148,20 @@ Edit `.env` to customize:
 | `EMBEDDING_PORT` | 6400 | Port for embedding service |
 | `COLLECTION_NAME` | documents | Qdrant collection name |
 | `HF_TOKEN` | (your token) | HuggingFace token (optional) |
+
+### BGE-M3 Low Memory Configuration
+
+The `.env` file includes optimized parameters that **reduce RAM usage from ~14GB to ~3.7GB**:
+
+| Parameter | Low-Mem Value | Default | Savings |
+|-----------|---------------|---------|---------|
+| `EMBEDDING_MAX_CONCURRENT_REQUESTS` | 64 | 512 | Less queue memory |
+| `EMBEDDING_MAX_BATCH_TOKENS` | 4096 | 16384 | ~4GB |
+| `EMBEDDING_MAX_CLIENT_BATCH_SIZE` | 8 | 32 | ~1GB |
+| `EMBEDDING_MAX_BATCH_REQUESTS` | 16 | unset | ~1GB |
+| `EMBEDDING_TOKENIZATION_WORKERS` | 2 | CPU cores | ~2-3GB |
+
+**Trade-off**: Lower throughput under heavy concurrent load. For single-user RAG or low-traffic deployments, this is perfectly fine with no noticeable difference.
 
 ## Development
 
