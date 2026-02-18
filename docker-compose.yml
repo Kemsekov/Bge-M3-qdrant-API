@@ -39,10 +39,16 @@ services:
       - "${RAG_API_PORT}:8000"
     volumes:
       - ./server:/app/server
+      - ./rag:/app/rag
     environment:
       - EMBEDDING_SERVICE_URL=http://bge-m3-embedding:80
       - QDRANT_URL=http://qdrant:6333
       - COLLECTION_NAME=${COLLECTION_NAME:-documents}
+      - RAG_MODEL=${RAG_MODEL:-}
+      - RAG_URL=${RAG_URL:-}
+      - RAG_API_KEY=${RAG_API_KEY:-}
+      - RAG_MAX_TOKENS=${RAG_MAX_TOKENS:-1024}
+      - RAG_TEMPERATURE=${RAG_TEMPERATURE:-1.0}
     depends_on:
       - bge-m3-embedding
       - qdrant

@@ -1,0 +1,76 @@
+{
+  "system_prompt": {
+    "description": "System instruction for grounding the LLM to answer only from provided context",
+    "template": "You are an expert assistant that answers questions based SOLELY on the provided context. Follow these rules:\n\n1. GROUNDING: Use ONLY information explicitly stated in the context. Do not use prior knowledge or make assumptions.\n2. CITATIONS: Cite sources using [N] format where N is the context number. Every factual claim must have a citation.\n3. UNCERTAINTY: If the answer cannot be found in the context, clearly state \"The provided context does not contain information about [topic].\"\n4. CONFLICTS: If sources contradict each other, acknowledge both perspectives with their citations.\n5. CLARITY: Be concise, direct, and structured in your response."
+  },
+
+  "message_prompt": {
+    "description": "Template for answer generation with question and context",
+    "template": "## Context Documents:\n{context}\n\n## Question:\n{question}\n\n## Instructions:\n- Answer using ONLY the context documents above\n- Cite each claim with [1], [2], etc.\n- If information is missing, say so explicitly\n- Structure your answer clearly\n\n## Answer:"
+  },
+
+  "keyword_prompt": {
+    "description": "Extracts 3-7 keywords for hybrid search (lexical + semantic)",
+    "template": "Extract key terms from the query for search.\n\nRules:\n1. Return 3-7 terms: nouns, proper names, technical concepts\n2. Preserve exact casing for tools, frameworks, protocols\n3. Keep multi-word concepts together\n4. Exclude: stop words, verbs, adjectives, generic terms\n5. Output ONLY a JSON array, nothing else\n\nExamples:\nInput: \"How to set up payment processing with Stripe?\"\nOutput: [\"payment\", \"Stripe\", \"integration\"]\n\nInput: \"Docker container networking between services\"\nOutput: [\"Docker\", \"container\", \"networking\", \"services\"]\n\nInput: \"Optimize PostgreSQL queries for large datasets\"\nOutput: [\"PostgreSQL\", \"queries\", \"optimization\", \"datasets\"]\n\nInput: \"Machine learning model deployment AWS SageMaker\"\nOutput: [\"machine learning\", \"model\", \"deployment\", \"AWS\", \"SageMaker\"]\n\nInput: \"{message}\"\nOutput:"
+  },
+
+  "self_evaluation_prompt": {
+    "description": "LLM-as-judge prompt for evaluating answer quality and context relevance",
+    "template": "You are an expert evaluator assessing RAG system responses. Analyze the following question, context, and answer.\n\n## Evaluation Criteria:\n\n### Context Score (0-10):\nRate how relevant the context is to answering the question:\n- 0: Completely irrelevant to the question\n- 1-3: Marginally related, missing key information\n- 4-6: Partially relevant, covers some aspects\n- 7-9: Highly relevant, contains most needed information\n- 10: Perfect match, directly addresses the question\n\n### Answer Score (0-10):\nRate the answer quality based on:\n- Faithfulness: Does it accurately reflect the context without hallucination?\n- Completeness: Does it address all parts of the question?\n- Citations: Are claims properly cited with [1], [2], etc.?\n- Clarity: Is the response well-structured and understandable?\n\nScoring:\n- 0: Wrong, harmful, or completely hallucinated\n- 1-3: Poor - major gaps, incorrect citations, or unfaithful to context\n- 4-6: Acceptable - addresses question but has issues\n- 7-9: Good - accurate, well-cited, mostly complete\n- 10: Excellent - perfect faithfulness, complete, properly cited\n\n## Input:\n{message}\n\n## Output score as dict {{'answer_score': N,'context_score': N}} where N is number 0<N<10. No explanations.:"
+  },
+
+  "rephrase_prompt": {
+    "description": "Generates 3 query variations for multi-query retrieval (improves recall)",
+    "template": "Generate 3 alternative phrasings of the query. Keep the same language and meaning. Vary specificity: one detailed, one concise, one balanced. Output ONLY a JSON array.\n\nExamples:\nInput: \"How do I fix a leaky faucet?\"\nOutput: [\"Steps to repair a dripping tap\", \"How to stop a faucet from leaking\", \"Fixing a water leak in a sink faucet\"]\n\nInput: \"Configure Celery Redis Django\"\nOutput: [\"Setting up Celery with Redis as broker in Django\", \"Django Celery configuration using Redis backend\", \"How to integrate Celery and Redis with Django project\"]\n\nInput: \"{message}\"\nOutput:"
+  },
+
+  "advanced_prompts": {
+    "hyde_prompt": {
+      "description": "Hypothetical Document Embeddings - generates a hypothetical answer to improve retrieval",
+      "template": "Write a hypothetical document that would answer this query. Include specific technical details, code snippets, or configuration examples that a good answer would contain.\n\n## Query:\n{message}\n\n## Hypothetical Document:\n"
+    },
+
+    "step_back_prompt": {
+      "description": "Generates a more abstract/generic query for multi-level retrieval",
+      "template": "Generate a more general, higher-level question that captures the broader concept behind this specific query.\n\n## Specific Query:\n{message}\n\n## Step-Back Question (broader concept):"
+    },
+
+    "sub_queries_prompt": {
+      "description": "Decomposes complex queries into multiple sub-questions",
+      "template": "Break down this complex query into 2-4 simpler sub-questions that address different aspects.\n\n## Rules:\n1. Each sub-question should be answerable independently\n2. Together they should cover the full scope of the original query\n3. Output as a JSON array of strings\n\n## Query:\n{message}\n\n## Sub-questions:"
+    },
+
+    "context_summarization_prompt": {
+      "description": "Pre-processes retrieved context to improve answer quality",
+      "template": "Summarize the key information from these context documents that is relevant to answering the question.\n\n## Question:\n{question}\n\n## Context Documents:\n{context}\n\n## Relevant Information Summary:"
+    }
+  },
+
+  "meta": {
+    "version": "1.0",
+    "created": "2026-02-18",
+    "based_on": [
+      "RAG Prompt Engineering best practices (Dasroot, 2025)",
+      "LLM-as-Judge evaluation guidelines (Hugging Face)",
+      "Answer Generation grounding techniques (OneUptime)",
+      "Query Rewriting strategies (DEV Community)",
+      "Context Engineering vs Prompt Engineering (Vatsal Shah, 2025)"
+    ],
+    "usage_notes": {
+      "temperature": {
+        "answer_generation": "0.3-0.7 for factual accuracy",
+        "keyword_extraction": "0.0 for deterministic output",
+        "query_rephrasing": "0.7-1.0 for creative variations",
+        "self_evaluation": "0.0 for consistent scoring"
+      },
+      "best_practices": [
+        "Use few-shot examples in prompts for better consistency",
+        "Explicitly define output format (JSON, array, etc.)",
+        "Include evaluation/reasoning step before final score in judge prompts",
+        "Use small integer scales (0-10 or 1-5) for LLM scoring",
+        "Add grounding instructions to prevent hallucination",
+        "Require citations for every factual claim"
+      ]
+    }
+  }
+}
