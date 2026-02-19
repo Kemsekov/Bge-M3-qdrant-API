@@ -53,3 +53,15 @@ services:
       - bge-m3-embedding
       - qdrant
     restart: unless-stopped
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: rag_web
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+    depends_on:
+      - rag-api
+    restart: unless-stopped

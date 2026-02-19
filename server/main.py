@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path
 from server.settings import *
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
@@ -13,6 +14,8 @@ from server.models import (
     QueryResponse,
     AnswerInput,
     AnswerResponse,
+    PagedDocsInput,
+    PagedDocsResponse,
 )
 from server.rag import Rag, initialize_rag
 import httpx
@@ -50,6 +53,15 @@ Client → FastAPI → Qdrant + BGE-M3 Embedding + LLM
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Initialize RAG instance
@@ -134,26 +146,6 @@ async def retrieve_context_with_embeddings(query: str, top_k: int = 5) -> list[d
         }
         for hit in search_results
     ]
-
-
-def compute_cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
-    """Compute cosine similarity between two vectors using Qdrant's approach.
-    
-    Qdrant computes cosine similarity as dot-product over normalized vectors.
-    This function implements the exact same logic.
-    """
-    v1 = np.array(vec1, dtype=np.float32)
-    v2 = np.array(vec2, dtype=np.float32)
-    
-    # Normalize vectors (L2 normalization) - same as Qdrant does internally
-    norm1 = np.linalg.norm(v1)
-    norm2 = np.linalg.norm(v2)
-    
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    
-    # Dot product on normalized vectors (Qdrant's approach)
-    return float(np.dot(v1 / norm1, v2 / norm2))
 
 
 @app.post("/add", response_model=AddResponse, tags=["Documents"])
@@ -294,10 +286,111 @@ async def answer_question(answer_input: AnswerInput):
 async def health_check():
     """
     Health check endpoint.
-    
+
     Returns the current status of the API.
     """
     return {"status": "healthy"}
+
+
+@app.get("/get_docs_paged", response_model=PagedDocsResponse, tags=["Documents"])
+async def get_docs_paged(
+    doc_type: str,
+    page_size: int = 100,
+    page_number: int = 1
+):
+    """
+    Get paged documents from the vector database filtered by document type.
+
+    Documents are filtered by the `type` or `doc_type` field in metadata using Qdrant filters.
+    Returns pagination info including total count and total pages.
+
+    Note: For optimal performance, create a payload index on metadata.type:
+        client.create_payload_index(collection_name, "metadata.type", field_type="keyword")
+    """
+    try:
+        qdrant_client = get_qdrant_client()
+        ensure_collection_exists(qdrant_client)
+
+        # Use Qdrant filter for efficient server-side filtering
+        from qdrant_client.http.models import FieldCondition, MatchValue, Filter
+
+        # Filter by both 'type' and 'doc_type' fields for backwards compatibility
+        doc_type_filter = Filter(
+            should=[
+                FieldCondition(
+                    key="metadata.type",
+                    match=MatchValue(value=doc_type)
+                ),
+                FieldCondition(
+                    key="metadata.doc_type",
+                    match=MatchValue(value=doc_type)
+                )
+            ]
+        )
+
+        # Get total count using count API with filter
+        count_result = qdrant_client.count(
+            collection_name=COLLECTION_NAME,
+            count_filter=doc_type_filter,
+            exact=True
+        )
+        total_count = count_result.count
+
+        if total_count == 0:
+            return PagedDocsResponse(
+                documents=[],
+                total_count=0,
+                page_number=page_number,
+                page_size=page_size,
+                total_pages=0,
+            )
+
+        total_pages = (total_count + page_size - 1) // page_size
+
+        # Validate page number
+        if page_number > total_pages:
+            return PagedDocsResponse(
+                documents=[],
+                total_count=total_count,
+                page_number=page_number,
+                page_size=page_size,
+                total_pages=total_pages,
+            )
+
+        # Calculate offset for pagination
+        offset = (page_number - 1) * page_size
+
+        # Scroll with filter to get documents for current page
+        records, _ = qdrant_client.scroll(
+            collection_name=COLLECTION_NAME,
+            scroll_filter=doc_type_filter,
+            limit=page_size,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        documents = [
+            QueryResult(
+                id=record.payload.get("document_id", str(record.id)),
+                content=record.payload.get("content", ""),
+                metadata=record.payload.get("metadata", {}),
+                score=1.0,  # No score for scroll results
+            )
+            for record in records
+        ]
+
+        return PagedDocsResponse(
+            documents=documents,
+            total_count=total_count,
+            page_number=page_number,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

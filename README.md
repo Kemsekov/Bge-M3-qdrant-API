@@ -1,26 +1,28 @@
 # RAG Vector Database System
 
-A lightweight Retrieval-Augmented Generation (RAG) system built with FastAPI, Qdrant vector database, and BGE-M3 text embeddings.
+A lightweight Retrieval-Augmented Generation (RAG) system built with FastAPI, Qdrant vector database, BGE-M3 text embeddings, and a web-based UI for document management.
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
-│   Client    │────▶│   FastAPI (RAG)  │────▶│   Qdrant    │
-│  (curl/HTTP)│     │   Port: 5121     │     │ Port: 6333  │
-└─────────────┘     └──────────────────┘     └─────────────┘
-                           │
-                           ▼
-                    ┌──────────────────┐
-                    │  BGE-M3-TEI      │
-                    │  Port: 6400      │
-                    └──────────────────┘
+┌─────────────┐     ┌─────────────┐     ┌──────────────────┐     ┌─────────────┐
+│   Web UI    │────▶│    nginx    │────▶│   FastAPI (RAG)  │────▶│   Qdrant    │
+│  Port:3000  │     │  (reverse   │     │   Port: 5121     │     │ Port: 6333  │
+│             │     │   proxy)    │     │                  │     │             │
+└─────────────┘     └─────────────┘     └──────────────────┘     └─────────────┘
+                                               │
+                                               ▼
+                                        ┌──────────────────┐
+                                        │  BGE-M3-TEI      │
+                                        │  Port: 6400      │
+                                        └──────────────────┘
 ```
 
 ## Components
 
 | Service | Port | Description |
 |---------|------|-------------|
+| **Web UI** | 3000 | Nginx-served frontend for document management and RAG queries |
 | **RAG API** | 5121 | FastAPI HTTP interface for adding/querying documents |
 | **Qdrant** | 6333 | Vector database for storing embeddings |
 | **BGE-M3-TEI** | 6400 | Text Embeddings Inference server (BAAI/bge-m3 model) |
@@ -37,6 +39,7 @@ A lightweight Retrieval-Augmented Generation (RAG) system built with FastAPI, Qd
 1. **Clone and configure:**
    ```bash
    cp .env.example .env
+   # Edit .env with your settings (RAG_MODEL, RAG_URL, etc.)
    ```
 
 2. **Start all services:**
@@ -50,6 +53,28 @@ A lightweight Retrieval-Augmented Generation (RAG) system built with FastAPI, Qd
    curl http://localhost:5121/health
    ```
 
+4. **Access the Web UI:**
+   - Open browser: `http://localhost:3000`
+   - Configure API Base URL if needed (default: `/api`)
+   - Use the **Test Connection** button to verify backend connectivity
+
+## Web UI Features
+
+| Tab | Description |
+|-----|-------------|
+| **➕ Add Document** | Add documents with ID, type, content, and custom metadata |
+| **📄 View Documents** | Browse documents by type with pagination (configurable page size) |
+| **🔍 Search** | Semantic search using vector similarity |
+| **🤖 Ask LLM** | RAG-powered Q&A with query rephrasing and context retrieval |
+
+### API Base URL Configuration
+
+The Web UI includes a settings bar to configure the backend API URL:
+- **Default:** `/api` (uses nginx reverse proxy, same-origin)
+- **Custom:** Set any backend URL (e.g., `http://localhost:5121`)
+- URL is saved in browser localStorage for persistence
+- Use **Reset** button to restore default `/api`
+
 ## API Usage
 
 ### Add a Document
@@ -60,7 +85,7 @@ curl -X POST http://localhost:5121/add \
   -d '{
     "id": "doc1",
     "content": "Your document text here",
-    "metadata": {"category": "example"}
+    "metadata": {"type": "programming", "author": "John"}
   }'
 ```
 
@@ -73,7 +98,7 @@ curl -X POST http://localhost:5121/add \
 }
 ```
 
-### Query Documents
+### Query Documents (Semantic Search)
 
 ```bash
 curl -X POST http://localhost:5121/query \
@@ -91,10 +116,49 @@ curl -X POST http://localhost:5121/query \
     {
       "id": "doc1",
       "content": "Python is a high-level programming language...",
-      "metadata": {"category": "programming"},
+      "metadata": {"type": "programming"},
       "score": 0.75
     }
   ]
+}
+```
+
+### Answer Questions with RAG
+
+```bash
+curl -X POST http://localhost:5121/answer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "What is Python?",
+    "top_k": 5,
+    "rephrases": 3
+  }'
+```
+
+**Response:**
+```json
+{
+  "answer": "Python is a high-level programming language...",
+  "original_question": "What is Python?",
+  "rephrases": ["Define Python programming", "Explain Python language"],
+  "contexts": [...]
+}
+```
+
+### Get Paged Documents by Type
+
+```bash
+curl "http://localhost:5121/get_docs_paged?doc_type=programming&page_size=100&page_number=1"
+```
+
+**Response:**
+```json
+{
+  "documents": [...],
+  "total_count": 250,
+  "page_number": 1,
+  "page_size": 100,
+  "total_pages": 3
 }
 ```
 
@@ -114,8 +178,12 @@ curl http://localhost:5121/health
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/add` | Add a document to the vector database |
-| `POST` | `/query` | Search for similar documents |
+| `POST` | `/query` | Search for similar documents using semantic search |
+| `POST` | `/answer` | Answer questions using RAG with context retrieval and rephrasing |
+| `GET` | `/get_docs_paged` | Get paged documents filtered by document type |
 | `GET` | `/health` | Health check endpoint |
+| `GET` | `/docs` | Swagger UI documentation |
+| `GET` | `/redoc` | ReDoc documentation |
 
 ### Request Schemas
 
@@ -124,7 +192,11 @@ curl http://localhost:5121/health
 {
   "id": "string (optional, auto-generated if not provided)",
   "content": "string (required)",
-  "metadata": "object (optional)"
+  "metadata": {
+    "type": "programming",
+    "author": "John",
+    "version": "1.0"
+  }
 }
 ```
 
@@ -132,8 +204,27 @@ curl http://localhost:5121/health
 ```json
 {
   "query": "string (required)",
-  "top_k": "integer (optional, default: 5)"
+  "top_k": "integer (optional, default: 5, max: 100)"
 }
+```
+
+**POST /answer**
+```json
+{
+  "question": "string (required)",
+  "top_k": "integer (optional, default: 5, max: 100)",
+  "rephrases": "integer (optional, default: 0, max: 10)"
+}
+```
+
+**GET /get_docs_paged**
+```
+GET /get_docs_paged?doc_type=programming&page_size=100&page_number=1
+
+Query Parameters:
+- doc_type (required): Filter by document type (from metadata.type)
+- page_size (optional, default: 100): Documents per page (max: 1000)
+- page_number (optional, default: 1): Page number (1-indexed)
 ```
 
 ## Configuration
@@ -143,11 +234,17 @@ Edit `.env` to customize:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RAG_API_PORT` | 5121 | HTTP port for RAG API |
+| `WEB_PORT` | 3000 | HTTP port for Web UI |
 | `QDRANT_HTTP_PORT` | 6333 | HTTP port for Qdrant |
 | `QDRANT_GRPS_PORT` | 6334 | gRPC port for Qdrant |
 | `EMBEDDING_PORT` | 6400 | Port for embedding service |
 | `COLLECTION_NAME` | documents | Qdrant collection name |
-| `HF_TOKEN` | (your token) | HuggingFace token (optional) |
+| `RAG_MODEL` | (required) | LLM model name for RAG |
+| `RAG_URL` | (required) | LLM API endpoint URL |
+| `RAG_API_KEY` | (required) | LLM API key |
+| `RAG_MAX_TOKENS` | 1024 | Max tokens for LLM response |
+| `RAG_TEMPERATURE` | 1.0 | LLM temperature (0.0-2.0) |
+| `HF_TOKEN` | (optional) | HuggingFace token for model downloads |
 
 ### BGE-M3 Low Memory Configuration
 
@@ -172,7 +269,7 @@ pip install -r requirements.txt
 uvicorn server.main:app --reload --port 5121
 ```
 
-Ensure Qdrant and embedding services are running and update environment variables:
+Ensure Qdrant and embedding services are running:
 
 ```bash
 export QDRANT_URL=http://localhost:6333
@@ -187,9 +284,22 @@ export EMBEDDING_SERVICE_URL=http://localhost:6400
 ├── .env                    # Environment variables
 ├── .env.example            # Environment template
 ├── requirements.txt        # Python dependencies
+├── README.md              # This file
 ├── server/
 │   ├── main.py            # FastAPI application
+│   ├── models.py          # Pydantic models
+│   ├── rag.py             # RAG orchestration
+│   ├── settings.py        # Configuration
+│   ├── prompts.json       # LLM prompts
 │   └── Dockerfile         # API container config
+├── web/
+│   ├── index.html         # Web UI HTML
+│   ├── css/
+│   │   └── styles.css     # Styles
+│   ├── js/
+│   │   └── app.js         # Frontend logic
+│   ├── nginx.conf         # Nginx reverse proxy config
+│   └── Dockerfile         # Web container config
 └── storage/
     ├── embedding/         # Cached embedding models
     └── qdrant_storage/    # Vector database files
@@ -197,6 +307,7 @@ export EMBEDDING_SERVICE_URL=http://localhost:6400
 
 ## Model Information
 
+### Embedding Model
 - **Model:** BAAI/bge-m3
 - **Embedding Dimension:** 1024
 - **Max Tokens:** 8192
@@ -207,6 +318,11 @@ The BGE-M3 model supports:
 - Dense retrieval
 - Sparse retrieval
 - Multi-vector retrieval
+
+### LLM Integration
+- Compatible with Ollama, OpenAI, and OpenAI-compatible APIs
+- Supports query rephrasing for improved retrieval
+- Configurable temperature and max tokens
 
 ## License
 
