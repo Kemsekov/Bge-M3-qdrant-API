@@ -1,3 +1,4 @@
+import numpy as np
 from pathlib import Path
 from server.settings import *
 from fastapi import FastAPI, HTTPException
@@ -112,6 +113,49 @@ async def retrieve_context(query: str, top_k: int = 5) -> list[dict]:
     ]
 
 
+async def retrieve_context_with_embeddings(query: str, top_k: int = 5) -> list[dict]:
+    """Retrieve context from the vector database along with document vectors."""
+    qdrant_client = get_qdrant_client()
+    ensure_collection_exists(qdrant_client)
+    query_embedding = await get_embedding(query)
+    search_results = qdrant_client.search(
+        collection_name=COLLECTION_NAME,
+        query_vector=query_embedding,
+        limit=top_k,
+        with_vectors=True,
+    )
+    return [
+        {
+            "id": hit.payload.get("document_id", str(hit.id)),
+            "content": hit.payload.get("content", ""),
+            "metadata": hit.payload.get("metadata"),
+            "score": hit.score,
+            "vector": hit.vector,
+        }
+        for hit in search_results
+    ]
+
+
+def compute_cosine_similarity(vec1: list[float], vec2: list[float]) -> float:
+    """Compute cosine similarity between two vectors using Qdrant's approach.
+    
+    Qdrant computes cosine similarity as dot-product over normalized vectors.
+    This function implements the exact same logic.
+    """
+    v1 = np.array(vec1, dtype=np.float32)
+    v2 = np.array(vec2, dtype=np.float32)
+    
+    # Normalize vectors (L2 normalization) - same as Qdrant does internally
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    
+    # Dot product on normalized vectors (Qdrant's approach)
+    return float(np.dot(v1 / norm1, v2 / norm2))
+
+
 @app.post("/add", response_model=AddResponse, tags=["Documents"])
 async def add_document(doc: DocumentInput):
     """
@@ -203,23 +247,25 @@ async def answer_question(answer_input: AnswerInput):
     top_k = answer_input.top_k
     
     # Step 1: Rephrase the question
-    rephrases = rag.rephrase(question)[:MAX_REPHRASES]
+    if answer_input.rephrases>0:
+        rephrases = rag.rephrase(question)[:answer_input.rephrases]
+    else:
+        rephrases=[]
     
     # Step 2: Retrieve contexts for original question and all rephrases
     all_contexts = []
     queries = [question] + rephrases
-    
-    contexts_per_phrase = max(3,top_k//len(queries))
+
     for query in queries:
-        contexts = await retrieve_context(query, top_k=contexts_per_phrase)
+        contexts = await retrieve_context(query, top_k=top_k)
         for ctx in contexts:
             ctx["source_query"] = query
             all_contexts.append(ctx)
-    
-    # Step 3: Sort by score and get top_k unique contexts
+
+    # Sort by original score and deduplicate
     all_contexts.sort(key=lambda x: x.get("score", 0), reverse=True)
+    all_contexts=all_contexts[:top_k]
     
-    # Deduplicate by content
     seen_contents = set()
     unique_contexts = []
     for ctx in all_contexts:
@@ -229,7 +275,7 @@ async def answer_question(answer_input: AnswerInput):
             unique_contexts.append(ctx)
         if len(unique_contexts) >= top_k:
             break
-    
+
     top_contexts = unique_contexts[:top_k]
     
     # Step 4: Generate answer using original question and top contexts

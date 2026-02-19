@@ -33,7 +33,7 @@ class QueryResponse(BaseModel):
 class AnswerInput(BaseModel):
     question: str = Field(..., description="The question to answer.", min_length=1)
     top_k: int = Field(default=5, description="Number of top contexts to retrieve for answer generation.", ge=1, le=100)
-
+    rephrases: int = Field(default=0, description="Number of top rephrases to apply to input question. Larger values will improve context retrieval", ge=0, le=100)
 
 class AnswerResponse(BaseModel):
     answer: str = Field(..., description="The LLM-generated answer based on the retrieved contexts.")
